@@ -8,7 +8,7 @@ on:
       - main
 
 jobs:
-  # New job to run tests before compiling
+  # Job 1: Run automated tests
   test:
     runs-on: ubuntu-latest
     steps:
@@ -23,33 +23,65 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      # TODO 01 Solved - Added the step to run tests
       - name: Run tests
         run: go test ./...
 
-  # Job to compile the application
+  # Job 2: Compile the application
   compile:
-    # TODO 02 Solved - Make sure that the `test` job is run before `compile`
     needs: test
-    
-    # Specify the OS for the runner (container)
-    runs-on: ubuntu-latest  # Use the latest Ubuntu runner
+    runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository code into the runner
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Go environment with version 1.22
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      # Step 3: Download Go module dependencies
       - name: Install dependencies
         run: go mod download
 
-      # Step 4: Compile the Go application into a binary named 'myapp'
       - name: Compile binary
         run: go build -o myapp
+
+  # Job 3: Build and push the Docker image
+  build:
+    runs-on: ubuntu-latest
+    
+    # Grant write permissions to access repository contents and GitHub Container Registry
+    permissions:
+      contents: read
+      packages: write
+
+    # Run this job only after the 'compile' job completes successfully
+    needs: compile
+    if: success()
+
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the Go environment (Go 1.22)
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # Step 3: Log in to GitHub Container Registry (GHCR) using GitHub Actions token
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 4: Build the Docker image and tag it with the repository name and 'latest'
+      - name: Build Docker image
+        run: docker build -t ghcr.io/${{ github.repository }}:latest .
+
+      # Step 5: Push the Docker image to GitHub Container Registry
+      - name: Push Docker image
+        run: docker push ghcr.io/${{ github.repository }}:latest
